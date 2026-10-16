@@ -190,26 +190,33 @@ async function follow ($: Engine) {
 }
 
 /**
- * Claude Code's temp folder for this session, where a pasted image is stored as
- * `images/<N>.<ext>`: `<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>/<project path, dashed>/<session id>`.
+ * Claude Code's temp folders for this session, where a pasted image is stored as `images/<N>.<ext>`:
+ * `<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>/<project path, dashed>/<session id>`. On Windows it is
+ * `claude-0` there (its `/tmp`), or `claude` in the user's temp folder: each is looked in.
  */
+async function sessionRoots ($: Engine) {
+  const tmpdir = ((await $.env.get('CLAUDE_CODE_TMPDIR')) || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  if ((await platformOf($)) !== 'windows') {
+    uid ??= (await $.process.run(['id', '-u'])).stdout.trim()
+    return [`${tmpdir || '/tmp'}/claude-${uid}`]
+  }
+  const temp = ((await $.env.get('TEMP')) || (await $.env.get('TMP')) || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  return [`${tmpdir || '/tmp'}/claude-0`, ...(tmpdir || temp ? [`${tmpdir || temp}/claude`] : [])]
+}
+
 async function sessionFolder ($: Engine) {
   if (folder) return folder
   const id = await $.session.id()
-  const isWindows = (await platformOf($)) === 'windows'
-  // Windows keeps it in the user's temp folder, as `claude/…`, with no uid.
-  const fallback = isWindows ? (await $.env.get('TEMP')) || (await $.env.get('TMP')) || '/tmp' : '/tmp'
-  const base = ((await $.env.get('CLAUDE_CODE_TMPDIR')) || fallback).replace(/\\/g, '/').replace(/\/+$/, '')
-  uid ??= isWindows ? '' : (await $.process.run(['id', '-u'])).stdout.trim()
-  const root = isWindows ? `${base}/claude` : `${base}/claude-${uid}`
   const names = new Set([await $.session.root(), await $.session.cwd()].map(path => path.replace(/[^a-zA-Z0-9]/g, '-')))
-  for (const name of names) {
-    if (await $.fs.exists(`${root}/${name}/${id}/images`)) return (folder = `${root}/${name}/${id}`)
-  }
-  // A project path too long for a folder name gets a hash after it: look for the session instead.
-  for (const entry of await $.fs.list(root).catch(() => [])) {
-    if (entry.kind === 'dir' && (await $.fs.exists(`${root}/${entry.name}/${id}/images`))) {
-      return (folder = `${root}/${entry.name}/${id}`)
+  for (const root of await sessionRoots($)) {
+    for (const name of names) {
+      if (await $.fs.exists(`${root}/${name}/${id}/images`)) return (folder = `${root}/${name}/${id}`)
+    }
+    // A project path too long for a folder name gets a hash after it: look for the session instead.
+    for (const entry of await $.fs.list(root).catch(() => [])) {
+      if (entry.kind === 'dir' && (await $.fs.exists(`${root}/${entry.name}/${id}/images`))) {
+        return (folder = `${root}/${entry.name}/${id}`)
+      }
     }
   }
   return undefined
