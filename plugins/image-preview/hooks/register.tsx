@@ -600,7 +600,7 @@ export const register: Register = (on, options) => {
     for (const [id, name] of namesIn(e.text)) names.set(id, name)
     // The engine lists each image it was sent with the pasted file's name, when it had one.
     const sent = (e.attachments ?? []).filter(item => item.type === 'image')
-    $.ui.log(`image-preview: attachments ${JSON.stringify(sent.map(item => item.filename ?? null))}`, { to: 'debug' })
+    $.ui.log(`image-preview: submit text=${JSON.stringify(e.text.slice(0, 300))} attachments=${JSON.stringify(e.attachments ?? null)}`, { to: 'debug' })
     const ordered = idsIn(e.text).sort((a, b) => a - b)
     if (sent.length === ordered.length) sent.forEach((item, i) => { if (item.filename) names.set(ordered[i]!, shortName(item.filename)) })
     for (const id of idsIn(e.text)) void load($, id)
@@ -634,6 +634,7 @@ export const register: Register = (on, options) => {
     if (e.surface !== 'terminal' || e.viewport?.isFullscreen === false) return next(e)
     note(e)
     if (e.component !== 'UserMessage') return float($, e, await next(e))
+    $.ui.log(`image-preview: row origin=${e.props.origin.kind} text=${JSON.stringify(e.props.text.slice(0, 300))}`, { to: 'debug' })
     const all = await read($, pictures)
     const ids = e.props.origin.kind === 'composer' ? idsIn(e.props.text) : []
     for (const id of ids) if (!all[id]) void load($, id)
