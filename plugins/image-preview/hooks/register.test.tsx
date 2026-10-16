@@ -4,6 +4,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
 import { fit, parseBmp, toCells } from './pixels'
+import { namesIn, shortName } from './register'
 
 const FOLDER = '/tmp/claude-501/-project-app/s-1'
 const RED = 0xff0000
@@ -585,4 +586,16 @@ test('on Windows a click opens the image in its own viewer', async ($, on) => {
   await ui.pointer({ type: 'up', x: 2, y: 0, button: 'left', in: 'chip:1' })
   await w.clock.settle()
   expect(w.runs).toContainEqual(['explorer', '\\tmp\\claude-0\\-project-app\\s-1\\images\\1.png'])
+})
+
+test('cuts a long file name to ten characters and keeps its format', () => {
+  expect(shortName('screenshot-2026.png')).toBe('screenshot...png')
+  expect(shortName('photo.jpg')).toBe('photo.jpg')
+  expect(shortName('0123456789.png')).toBe('0123456789.png')
+})
+
+test('names the images by the paths in the prompt, only when each placeholder has one', () => {
+  const names = namesIn('look at C:\\Users\\me\\Pictures\\captura-de-pantalla.png [Image #1] and ~/a/b.jpg [Image #2]')
+  expect([...names]).toEqual([[1, 'captura-de...png'], [2, 'b.jpg']])
+  expect(namesIn('[Image #1] [Image #2] /a/b.jpg').size).toBe(0)
 })

@@ -47,6 +47,10 @@ The card floats over the transcript and moves nothing: the transcript does not s
 
 Warp speaks the kitty graphics protocol, but not the Unicode placeholders Claude Code draws pictures with, so Warp cannot draw it in the terminal. `CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1` makes this mod send the picture to a terminal Claude Code does not know draws pictures; it only helps in one that supports those placeholders. It sends a PNG of up to 1024 pixels and 2 MB; a larger one is drawn in cells.
 
+## File names
+
+Claude Code keeps a pasted image as `images/<N>.<ext>` and drops its name, so the mod can only know it when the prompt also holds the image paths: with as many image paths as `[Image #N]` placeholders, they are paired in order. The chip and the card's caption then show the name, cut to ten characters before the format: `[Image #1 screenshot...png]`. Without paths, they stay `[Image #1]`.
+
 ## Install
 
 ```text

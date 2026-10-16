@@ -54,7 +54,27 @@ const WINDOW_LIFE = 120
 /** The ids of the `[Image #N]` placeholders in a text, each once, in order. */
 export const idsIn = (text: string) => [...new Set([...text.matchAll(TOKEN)].map(match => Number(match[1])))]
 
-const sameIds = (a: readonly number[], b: readonly number[] = []) => a.length === b.length && a.every((id, i) => id === b[i])
+const IMAGE_PATH = /(?:[^\s'"`<>|*?]*[\\/])?([^\s'"`<>|*?\\/]+\.(?:png|jpe?g|gif|webp|bmp|heic|tiff?))(?=$|[\s'"`)\]])/gi
+const MAX_NAME = 10
+
+/** A file name cut to `MAX_NAME` characters before its format: `screenshot-2026.png` -> `screenshot...png`. */
+export const shortName = (name: string) => {
+  const dot = name.lastIndexOf('.')
+  const base = name.slice(0, dot)
+  return base.length > MAX_NAME ? `${base.slice(0, MAX_NAME)}...${name.slice(dot + 1)}` : name
+}
+
+/**
+ * The names of the image files whose paths are in a text, by the id they stand for, when the text
+ * has as many paths as `[Image #N]` placeholders (Claude Code keeps no name of its own): else none.
+ */
+export const namesIn = (text: string) => {
+  const ids = idsIn(text)
+  const files = [...text.matchAll(IMAGE_PATH)].map(match => match[1]!)
+  return files.length === ids.length ? new Map(ids.map((id, i) => [id, shortName(files[i]!)])) : new Map<number, string>()
+}
+
+const sameIds =(a: readonly number[], b: readonly number[] = []) => a.length === b.length && a.every((id, i) => id === b[i])
 
 const sizeOf = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -81,6 +101,8 @@ let tool: Tool | undefined
 let windowing: Platform | undefined
 let window: { id: number; isOpen: boolean } | undefined
 // The pictures read, shrunk, by id; the cells drawn of them, by id and size.
+// The short file names read from the prompt, by id.
+const names = new Map<number, string>()
 const thumbs = new Map<number, Pixels>()
 const loading = new Set<number>()
 const cells = new Map<string, string>()
@@ -118,6 +140,7 @@ async function follow ($: Engine) {
   if (sessionId !== undefined) rows.clear()
   sessionId = id
   folder = undefined
+  names.clear()
   thumbs.clear()
   cells.clear()
   views.clear()
@@ -335,7 +358,7 @@ function card ({ Box, Image, Raster, Text }: Ui, all: Record<string, Picture>, i
     painted = toCells(thumbs.get(id)!, columns, rows)
     cells.set(key, painted)
   }
-  const caption = `${label} ${picture.format.toUpperCase()} · ${sizeOf(picture.bytes)}`
+  const caption = `${label}${names.has(id) ? ` ${names.get(id)}` : ''} ${picture.format.toUpperCase()} · ${sizeOf(picture.bytes)}`
   // A picture narrower than its caption is centered, the rows beside it written blank.
   const width = Math.max(columns, Math.min(caption.length, bounds.columns - CARD_COLUMNS))
   const side = (n: number) => n > 0 && <Text>{Array.from({ length: rows }, () => ' '.repeat(n)).join('\n')}</Text>
@@ -519,6 +542,7 @@ async function float ($: Engine, e: Row, drawn: RenderElement, overlays: RenderE
 async function track ($: Engine, text: string) {
   await follow($)
   const ids = idsIn(text)
+  for (const [id, name] of namesIn(text)) names.set(id, name)
   if (!sameIds(ids, await read($, draft))) {
     await update($, draft, () => ids)
     await change($, closeChipCard)
@@ -571,6 +595,7 @@ export const register: Register = (on, options) => {
     if (e.origin.kind !== 'composer') return result
     await update($, draft, () => [])
     await change($, () => null)
+    for (const [id, name] of namesIn(e.text)) names.set(id, name)
     for (const id of idsIn(e.text)) void load($, id)
     return result
   }).catch(($, e, next) => next(e))
@@ -664,7 +689,7 @@ export const register: Register = (on, options) => {
         {inBand !== undefined && card(ui, await read($, pictures), inBand, bounds)}
         {ids.length > 0 && (
           <Box flexDirection="row" columnGap={1}>
-            {ids.map(id => <Client key={`chip:${id}`} module="./chip.tsx" props={{ label: `[Image #${id}]` }} />)}
+            {ids.map(id => <Client key={`chip:${id}`} module="./chip.tsx" props={{ label: names.has(id) ? `[Image #${id} ${names.get(id)}]` : `[Image #${id}]` }} />)}
             <Text dimColor>hover to preview · click to open</Text>
           </Box>
         )}
