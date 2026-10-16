@@ -49,7 +49,7 @@ Warp speaks the kitty graphics protocol, but not the Unicode placeholders Claude
 
 ## File names
 
-Claude Code keeps a pasted image as `images/<N>.<ext>` and drops its name, so the mod can only know it when the prompt also holds the image paths: with as many image paths as `[Image #N]` placeholders, they are paired in order. The chip and the card's caption then show the name, cut to fifty characters before the format: `[screenshot-2026.png]`. Without paths, they stay `[Image #1]`.
+Once a prompt is sent, Claude Code tells the mod the name of each pasted file (`attachments[].filename` of `prompt.submit`; a screenshot from the clipboard has one too, on Windows). The sent prompt then reads `[Screenshot 2026-10-16 153232.png]` where it had `[Image #1]`, and the card's caption shows the name. A name over fifty characters is cut to fifty, then `...` and the format. The names are paired with the placeholders in the order pasted, and only when there are as many of one as of the other. Before the prompt is sent (the chip above the box), the name is only known when the text holds the image's path; else it stays `[Image #1]`. The `⎿ [Image #N]` rows Claude Code lists under a sent prompt are its own and stay as they are.
 
 ## Install
 
