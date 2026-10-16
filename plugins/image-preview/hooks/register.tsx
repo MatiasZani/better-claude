@@ -598,6 +598,11 @@ export const register: Register = (on, options) => {
     await update($, draft, () => [])
     await change($, () => null)
     for (const [id, name] of namesIn(e.text)) names.set(id, name)
+    // The engine lists each image it was sent with the pasted file's name, when it had one.
+    const sent = (e.attachments ?? []).filter(item => item.type === 'image')
+    $.ui.log(`image-preview: attachments ${JSON.stringify(sent.map(item => item.filename ?? null))}`, { to: 'debug' })
+    const ordered = idsIn(e.text).sort((a, b) => a - b)
+    if (sent.length === ordered.length) sent.forEach((item, i) => { if (item.filename) names.set(ordered[i]!, shortName(item.filename)) })
     for (const id of idsIn(e.text)) void load($, id)
     return result
   }).catch(($, e, next) => next(e))
