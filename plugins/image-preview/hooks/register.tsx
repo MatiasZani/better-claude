@@ -155,10 +155,12 @@ async function follow ($: Engine) {
 async function sessionFolder ($: Engine) {
   if (folder) return folder
   const id = await $.session.id()
-  const base = ((await $.env.get('CLAUDE_CODE_TMPDIR')) || '/tmp').replace(/\/+$/, '')
-  // Windows has no uid: Claude Code names its folder `claude-0` there.
-  uid ??= (await platformOf($)) === 'windows' ? '0' : (await $.process.run(['id', '-u'])).stdout.trim()
-  const root = `${base}/claude-${uid}`
+  const isWindows = (await platformOf($)) === 'windows'
+  // Windows keeps it in the user's temp folder, as `claude/…`, with no uid.
+  const fallback = isWindows ? (await $.env.get('TEMP')) || (await $.env.get('TMP')) || '/tmp' : '/tmp'
+  const base = ((await $.env.get('CLAUDE_CODE_TMPDIR')) || fallback).replace(/\\/g, '/').replace(/\/+$/, '')
+  uid ??= isWindows ? '' : (await $.process.run(['id', '-u'])).stdout.trim()
+  const root = isWindows ? `${base}/claude` : `${base}/claude-${uid}`
   const names = new Set([await $.session.root(), await $.session.cwd()].map(path => path.replace(/[^a-zA-Z0-9]/g, '-')))
   for (const name of names) {
     if (await $.fs.exists(`${root}/${name}/${id}/images`)) return (folder = `${root}/${name}/${id}`)
