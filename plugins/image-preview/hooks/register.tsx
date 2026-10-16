@@ -638,8 +638,9 @@ export const register: Register = (on, options) => {
     const all = await read($, pictures)
     const ids = e.props.origin.kind === 'composer' ? idsIn(e.props.text) : []
     for (const id of ids) if (!all[id]) void load($, id)
-    // Each placeholder in the row is followed by its file's name: the chips below stay on the token.
-    const named = e.props.text.replace(TOKEN, (token, id) => names.has(Number(id)) ? `${token} ${names.get(Number(id))}` : token)
+    // A placeholder in the row reads as its file's name, in the same brackets: `[Image #4]` -> `[Screenshot...png]`.
+    const labelOf = (token: string, id: number) => names.has(id) ? `[${names.get(id)}]` : token
+    const named = e.props.text.replace(TOKEN, (token, id) => labelOf(token, Number(id)))
     const drawn = await next(named === e.props.text ? e : { ...e, props: { ...e.props, text: named } })
     // The engine lists the images it was sent, in the order pasted: each one stored, read or not.
     const listed = ids.filter(id => { const picture = all[id]; return picture && !('error' in picture && picture.error === NOT_STORED) })
@@ -660,15 +661,19 @@ export const register: Register = (on, options) => {
     const line = e.props.text.split('\n')[0]!
     const width = (e.viewport?.columns ?? 80) - 1
     const placed = new Set<number>()
+    // Each name before a placeholder moves it by the difference in length.
+    let shift = 0
     for (const match of line.matchAll(TOKEN)) {
       const id = Number(match[1])
-      const at = PROMPT_AT + match.index
+      const label = labelOf(match[0], id)
+      const at = PROMPT_AT + match.index + shift
+      shift += label.length - match[0].length
       const picture = all[id]
-      if (placed.has(id) || !picture || 'error' in picture || !/^[\u0020-\u02ff]*$/.test(line.slice(0, match.index)) || at + match[0].length > width) continue
+      if (placed.has(id) || !picture || 'error' in picture || !/^[\u0020-\u02ff]*$/.test(line.slice(0, match.index)) || at + label.length > width) continue
       placed.add(id)
       overlays.push(
         <Box key={`token-${id}`} position="absolute" top={1} left={at}>
-          <Client key={`token:${id}`} module="./chip.tsx" width={match[0].length} height={1} />
+          <Client key={`token:${id}`} module="./chip.tsx" width={label.length} height={1} />
         </Box>
       )
     }
