@@ -638,7 +638,9 @@ export const register: Register = (on, options) => {
     const all = await read($, pictures)
     const ids = e.props.origin.kind === 'composer' ? idsIn(e.props.text) : []
     for (const id of ids) if (!all[id]) void load($, id)
-    const drawn = await next(e)
+    // Each placeholder in the row is followed by its file's name: the chips below stay on the token.
+    const named = e.props.text.replace(TOKEN, (token, id) => names.has(Number(id)) ? `${token} ${names.get(Number(id))}` : token)
+    const drawn = await next(named === e.props.text ? e : { ...e, props: { ...e.props, text: named } })
     // The engine lists the images it was sent, in the order pasted: each one stored, read or not.
     const listed = ids.filter(id => { const picture = all[id]; return picture && !('error' in picture && picture.error === NOT_STORED) })
     listed.sort((a, b) => a - b)
