@@ -55,9 +55,9 @@ const WINDOW_LIFE = 120
 export const idsIn = (text: string) => [...new Set([...text.matchAll(TOKEN)].map(match => Number(match[1])))]
 
 const IMAGE_PATH = /(?:[^\s'"`<>|*?]*[\\/])?([^\s'"`<>|*?\\/]+\.(?:png|jpe?g|gif|webp|bmp|heic|tiff?))(?=$|[\s'"`)\]])/gi
-const MAX_NAME = 10
+const MAX_NAME = 50
 
-/** A file name cut to `MAX_NAME` characters before its format: `screenshot-2026.png` -> `screenshot...png`. */
+/** A file name cut to `MAX_NAME` characters before its format: `<60 characters>.png` -> `<50 characters>...png`. */
 export const shortName = (name: string) => {
   const dot = name.lastIndexOf('.')
   const base = name.slice(0, dot)
