@@ -643,13 +643,23 @@ export const register: Register = (on, options) => {
     // The engine lists the images it was sent, in the order pasted: each one stored, read or not.
     const listed = ids.filter(id => { const picture = all[id]; return picture && !('error' in picture && picture.error === NOT_STORED) })
     listed.sort((a, b) => a - b)
-    const { Box, Client } = $.ui.resolve(e)
+    const { Box, Client, Text } = $.ui.resolve(e)
     const overlays: RenderElement[] = []
     listed.forEach((id, i) => {
       if ('error' in all[id]!) return
+      const token = `[Image #${id}]`
+      const label = labelOf(token, id)
+      // The engine's row is written over with the name, padded to hide the token under it.
+      if (label !== token) {
+        overlays.push(
+          <Box key={`listed-name-${id}`} position="absolute" bottom={-1 - i} left={LISTED_AT}>
+            <Text dimColor underline wrap="truncate-end">{label.padEnd(token.length)}</Text>
+          </Box>
+        )
+      }
       overlays.push(
         <Box key={`listed-${id}`} position="absolute" bottom={-1 - i} left={LISTED_AT}>
-          <Client key={`sent:${id}`} module="./chip.tsx" width={`[Image #${id}]`.length} height={1} />
+          <Client key={`sent:${id}`} module="./chip.tsx" width={Math.max(label.length, token.length)} height={1} />
         </Box>
       )
     })
