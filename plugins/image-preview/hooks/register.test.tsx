@@ -4,7 +4,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
 import { fit, parseBmp, toCells } from './pixels'
-import { namesIn, shortName } from './register'
+import { chipsIn, namesIn, pairNames, renameTokens, shortName } from './register'
 
 const FOLDER = '/tmp/claude-501/-project-app/s-1'
 const RED = 0xff0000
@@ -598,4 +598,47 @@ test('names the images by the paths in the prompt, only when each placeholder ha
   const names = namesIn('look at C:\\Users\\me\\Pictures\\captura-de-pantalla.png [Image #1] and ~/a/b.jpg [Image #2]')
   expect([...names]).toEqual([[1, 'captura-de-pantalla.png'], [2, 'b.jpg']])
   expect(namesIn('[Image #1] [Image #2] /a/b.jpg').size).toBe(0)
+})
+
+test('cuts a long name that has no format', () => {
+  expect(shortName('a'.repeat(60))).toBe('a'.repeat(50) + '...')
+  expect(shortName('.' + 'a'.repeat(60))).toBe('.' + 'a'.repeat(49) + '...')
+  expect(shortName('README')).toBe('README')
+})
+
+test('pairs the names with the ids in the order pasted, images only', () => {
+  const files = [{ type: 'image', filename: 'a.png' }, { type: 'document', filename: 'x.pdf' }, { type: 'image', filename: 'b.png' }]
+  expect([...pairNames([7, 3], files)]).toEqual([[3, 'a.png'], [7, 'b.png']])
+})
+
+test('pairs no name when the images and the placeholders differ in count', () => {
+  expect(pairNames([1, 2], [{ type: 'image', filename: 'a.png' }]).size).toBe(0)
+  expect(pairNames([1], [{ type: 'image', filename: 'a.png' }, { type: 'image', filename: 'b.png' }]).size).toBe(0)
+  expect(pairNames([1], []).size).toBe(0)
+})
+
+test('skips an image that had no name, and shortens a long one', () => {
+  const files = [{ type: 'image' }, { type: 'image', filename: 'b'.repeat(60) + '.jpg' }]
+  expect([...pairNames([1, 2], files)]).toEqual([[2, 'b'.repeat(50) + '...jpg']])
+})
+
+test('reads each placeholder with a name as it, in its brackets, and leaves the rest', () => {
+  const named = new Map([[1, 'a.png'], [3, 'c.png']])
+  expect(renameTokens('see [Image #1], [Image #2] and [Image #3] [Image #1]', named)).toBe('see [a.png], [Image #2] and [c.png] [a.png]')
+  expect(renameTokens('no images here', named)).toBe('no images here')
+  expect(renameTokens('[Image #1]', new Map())).toBe('[Image #1]')
+})
+
+test('places a chip over each image where the renamed line puts it', () => {
+  const named = new Map([[1, 'a.png'], [2, 'bb.png']])
+  // `[Image #1]` (10) reads `[a.png]` (7), so the second one moves 3 cells left.
+  expect(chipsIn('[Image #1] [Image #2]', named, 80)).toEqual([{ id: 1, at: 0, width: 7 }, { id: 2, at: 8, width: 8 }])
+  expect(chipsIn('[Image #1] [Image #2]', new Map(), 80)).toEqual([{ id: 1, at: 0, width: 10 }, { id: 2, at: 11, width: 10 }])
+})
+
+test('places a chip once for an image named twice, and none past the line or after wide text', () => {
+  const named = new Map([[1, 'a.png']])
+  expect(chipsIn('[Image #1] [Image #1]', named, 80).length).toBe(1)
+  expect(chipsIn('[Image #1]', named, 6)).toEqual([])
+  expect(chipsIn('日本 [Image #1]', named, 80)).toEqual([])
 })

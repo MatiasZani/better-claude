@@ -60,8 +60,10 @@ const MAX_NAME = 50
 /** A file name cut to `MAX_NAME` characters before its format: `<60 characters>.png` -> `<50 characters>...png`. */
 export const shortName = (name: string) => {
   const dot = name.lastIndexOf('.')
-  const base = name.slice(0, dot)
-  return base.length > MAX_NAME ? `${base.slice(0, MAX_NAME)}...${name.slice(dot + 1)}` : name
+  // A name with no format (or only a leading dot) is cut with nothing after the dots.
+  const base = dot > 0 ? name.slice(0, dot) : name
+  const format = dot > 0 ? name.slice(dot + 1) : ''
+  return base.length > MAX_NAME ? `${base.slice(0, MAX_NAME)}...${format}` : name
 }
 
 /**
@@ -74,7 +76,46 @@ export const namesIn = (text: string) => {
   return files.length === ids.length ? new Map(ids.map((id, i) => [id, shortName(files[i]!)])) : new Map<number, string>()
 }
 
-const sameIds =(a: readonly number[], b: readonly number[] = []) => a.length === b.length && a.every((id, i) => id === b[i])
+/**
+ * The name of each image, by id: the engine lists the images it was sent in the order they were
+ * pasted, which is the ids' order. A count that differs says nothing of which is which: no names.
+ */
+export const pairNames = (ids: readonly number[], attachments: readonly { type: string; filename?: string }[]) => {
+  const images = attachments.filter(item => item.type === 'image')
+  const sorted = [...ids].sort((a, b) => a - b)
+  const paired = new Map<number, string>()
+  if (images.length === sorted.length) images.forEach((item, i) => { if (item.filename) paired.set(sorted[i]!, shortName(item.filename)) })
+  return paired
+}
+
+/** What a placeholder reads as: its image's name in the same brackets, or itself without one. */
+const labelOf = (token: string, id: number, named: ReadonlyMap<number, string>) => named.has(id) ? `[${named.get(id)}]` : token
+
+/** A text with each placeholder that has a name read as it: `[Image #4]` -> `[Screenshot...png]`. */
+export const renameTokens = (text: string, named: ReadonlyMap<number, string>) =>
+  text.replace(TOKEN, (token, id) => labelOf(token, Number(id), named))
+
+/**
+ * Where the first line of a renamed prompt holds each image, to put a chip over it: the id, the
+ * column and the width, each image once. Only where the place can be told: after text one cell a
+ * character, and before the end of the `columns` the line has.
+ */
+export const chipsIn = (line: string, named: ReadonlyMap<number, string>, columns: number) => {
+  const chips: { id: number; at: number; width: number }[] = []
+  let shift = 0
+  for (const match of line.matchAll(TOKEN)) {
+    const id = Number(match[1])
+    const label = labelOf(match[0], id, named)
+    const at = match.index + shift
+    shift += label.length - match[0].length
+    if (chips.some(chip => chip.id === id) || !/^[\u0020-\u02ff]*$/.test(line.slice(0, match.index)) || at + label.length > columns) continue
+    chips.push({ id, at, width: label.length })
+  }
+  return chips
+}
+
+
+const sameIds = (a: readonly number[], b: readonly number[] = []) => a.length === b.length && a.every((id, i) => id === b[i])
 
 const sizeOf = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -599,9 +640,7 @@ export const register: Register = (on, options) => {
     await change($, () => null)
     for (const [id, name] of namesIn(e.text)) names.set(id, name)
     // The engine lists each image it was sent with the pasted file's name, when it had one.
-    const sent = (e.attachments ?? []).filter(item => item.type === 'image')
-    const ordered = idsIn(e.text).sort((a, b) => a - b)
-    if (sent.length === ordered.length) sent.forEach((item, i) => { if (item.filename) names.set(ordered[i]!, shortName(item.filename)) })
+    for (const [id, name] of pairNames(idsIn(e.text), e.attachments ?? [])) names.set(id, name)
     for (const id of idsIn(e.text)) void load($, id)
     return result
   }).catch(($, e, next) => next(e))
@@ -636,9 +675,7 @@ export const register: Register = (on, options) => {
     const all = await read($, pictures)
     const ids = e.props.origin.kind === 'composer' ? idsIn(e.props.text) : []
     for (const id of ids) if (!all[id]) void load($, id)
-    // A placeholder in the row reads as its file's name, in the same brackets: `[Image #4]` -> `[Screenshot...png]`.
-    const labelOf = (token: string, id: number) => names.has(id) ? `[${names.get(id)}]` : token
-    const named = e.props.text.replace(TOKEN, (token, id) => labelOf(token, Number(id)))
+    const named = renameTokens(e.props.text, names)
     const drawn = await next(named === e.props.text ? e : { ...e, props: { ...e.props, text: named } })
     // The engine lists the images it was sent, in the order pasted: each one stored, read or not.
     const listed = ids.filter(id => { const picture = all[id]; return picture && !('error' in picture && picture.error === NOT_STORED) })
@@ -658,20 +695,12 @@ export const register: Register = (on, options) => {
     // place of each can be told (before the line wraps, after text one cell a character).
     const line = e.props.text.split('\n')[0]!
     const width = (e.viewport?.columns ?? 80) - 1
-    const placed = new Set<number>()
-    // Each name before a placeholder moves it by the difference in length.
-    let shift = 0
-    for (const match of line.matchAll(TOKEN)) {
-      const id = Number(match[1])
-      const label = labelOf(match[0], id)
-      const at = PROMPT_AT + match.index + shift
-      shift += label.length - match[0].length
+    for (const { id, at, width: size } of chipsIn(line, names, width - PROMPT_AT)) {
       const picture = all[id]
-      if (placed.has(id) || !picture || 'error' in picture || !/^[\u0020-\u02ff]*$/.test(line.slice(0, match.index)) || at + label.length > width) continue
-      placed.add(id)
+      if (!picture || 'error' in picture) continue
       overlays.push(
-        <Box key={`token-${id}`} position="absolute" top={1} left={at}>
-          <Client key={`token:${id}`} module="./chip.tsx" width={label.length} height={1} />
+        <Box key={`token-${id}`} position="absolute" top={1} left={PROMPT_AT + at}>
+          <Client key={`token:${id}`} module="./chip.tsx" width={size} height={1} />
         </Box>
       )
     }
